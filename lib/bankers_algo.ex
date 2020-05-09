@@ -1,52 +1,38 @@
 defmodule BankersAlgo do
   alias BankersAlgo.Server
-  alias BankersAlgo.Utils
   require Logger
-  @allowed_keys BankersAlgo.Constants.allowed_keys()
 
-  def launch(total_process, init_state) do
-    # launch GenServer process
-    case GenServer.start_link(Server, init_state) do
-      # launch child processes
-      {:ok, pid} ->
-        res = task(pid, init_state, total_process)
-        state = GenServer.call(pid, {:state})
-        if res == :ok do
-          Logger.info("All processing was passed with no problem: #{inspect(state)}")
-        else
-          Logger.error("Failed processing: #{inspect(state)}")
-        end
-        res
-      {:error, _} -> :error
-    end
+  def main(scenario_map) do
+    {init_state, init_each_resource, scenario} = get_values(scenario_map)
+    # launch GenServer
+    {:ok, pid} = GenServer.start_link(Server, init_state)
+    # request GenServer allocate init resource
+    Enum.map(init_each_resource, fn req -> GenServer.call(pid, {:init, req}) end)
+    |> genserver_request(scenario, pid)
   end
 
-  def task(_, _, 0), do: :ok
-  def task(pid, init_state, num) do
-    Logger.info("Request resource by #{inspect(self())}", ansi_color: :blue)
-    # fetch init resource from GenServer
-    own_src = GenServer.call(pid, {:init})
-    # check resource
-    request = request_resource(init_state)
-
+  # call to GenServer, check to resource
+  defp genserver_request([], [], _pid), do: :ok
+  defp genserver_request([init_resource | i_tail], [max_resource | m_tail], pid) do
+    # distract
+    request = Map.merge(init_resource, max_resource, fn _k, v1, v2 -> v2 - v1 end)
     case GenServer.call(pid, {:request, request}) do
       {:ok, _} ->
-        # merge map
-        return = Map.merge(own_src, request, fn _k, v1, v2 -> v1 + v2 end)
         # return resource
-        GenServer.cast(pid, {:return, return})
-        # check resource
-        task(pid, init_state, num-1)
+        GenServer.cast(pid, {:return, max_resource})
+        genserver_request(i_tail, m_tail, pid)
       {:unsafe, _} -> :unsafe
     end
   end
 
-  def request_resource(init_state) do
-    Enum.reduce(@allowed_keys, %{}, fn k, acc ->
-      decided_num =
-        Map.get(init_state, k)
-        |> Utils.random_deciede_number()
-      Map.put(acc, k, decided_num)
-    end)
+  # get values from map and check same length
+  defp get_values(%{
+    "init_state" => init_state,
+    "init_each_resource" => init_each_resource,
+    "scenario" => scenario
+    }
+  ) when length(init_each_resource) == length(scenario) do
+    {init_state, init_each_resource, scenario}
   end
+  defp get_values(_), do: {:error, nil, nil}
 end
