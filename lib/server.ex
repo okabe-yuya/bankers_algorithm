@@ -40,10 +40,11 @@ defmodule BankersAlgo.Server do
     {:reply, state, state}
   end
 
-  def handle_cast({:return, %{"A" => _, "B" => _, "C" => _, "D" => _} = return}, state) do
+  def handle_call({:return, %{"A" => _, "B" => _, "C" => _, "D" => _} = return}, _from, state) do
+    Logger.info("Return resource: #{inspect(return)}")
     merge_state = Map.merge(state, return, fn _, v1, v2 -> v1 + v2 end)
     Logger.info("Received resource and merge: #{inspect(merge_state)}")
-    {:noreply, merge_state}
+    {:reply, merge_state, merge_state}
   end
 
   defp is_unsafe([], reply), do: {:ok, reply}
