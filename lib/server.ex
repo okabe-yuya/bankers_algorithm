@@ -1,8 +1,6 @@
 defmodule BankersAlgo.Server do
   use GenServer
   require Logger
-  alias BankersAlgo.Utils
-  @allowed_keys BankersAlgo.Constants.allowed_keys()
 
   # lauch GenServer(behavior)
   # init_status = A(現在利用可能な資源)
@@ -25,49 +23,36 @@ defmodule BankersAlgo.Server do
     {:error, reason}
   end
 
-  def handle_call({:init}, _from, state) do
-    {init_src, state} = Enum.reduce(@allowed_keys, {%{}, state}, fn k, acc ->
-      limit_num = Map.get(state, k)
-      decided_num = Utils.random_deciede_number(limit_num)
-      {n_acc, n_state} = acc
-      next_acc = Map.put(n_acc, k, decided_num)
-      next_state = Map.put(n_state, k, limit_num - decided_num)
-      {next_acc, next_state}
-    end)
-    Logger.info("Gave resource: #{inspect(init_src)}")
-    {:reply, init_src, state}
+  def handle_call({:init, %{"A" => _, "B" => _, "C" => _, "D" => _} = max_resource}, _from, state) do
+    reply = Map.merge(state, max_resource, fn _, v1, v2 -> v1 - v2 end)
+    {:reply, max_resource, reply}
   end
 
   # check resource
   def handle_call({:request, %{"A" => _, "B" => _, "C" => _, "D" => _} = request}, _from, state) do
     Logger.info("Received request: #{inspect(request)}")
-    reply = check_and_update_state(@allowed_keys, state, request)
-    {_, next_state} = reply
-    Logger.info("Updated sever state: #{inspect(next_state)}")
-    {:reply, reply, next_state}
+    reply = Map.merge(state, request, fn _, v1, v2 -> v1 - v2 end)
+    Logger.info("Updated sever state: #{inspect(reply)}")
+    {:reply, is_unsafe(Map.keys(state), reply), reply}
   end
 
   def handle_call({:state}, _from, state) do
     {:reply, state, state}
   end
 
-  def handle_cast({:return, %{"A" => _, "B" => _, "C" => _, "D" => _} = return}, state) do
-    merge_state = Enum.reduce(["A", "B", "C", "D"], state, fn k, acc ->
-      Map.put(acc, k, Map.get(acc, k) + Map.get(return, k))
-    end)
+  def handle_call({:return, %{"A" => _, "B" => _, "C" => _, "D" => _} = return}, _from, state) do
+    Logger.info("Return resource: #{inspect(return)}")
+    merge_state = Map.merge(state, return, fn _, v1, v2 -> v1 + v2 end)
     Logger.info("Received resource and merge: #{inspect(merge_state)}")
-    {:noreply, merge_state}
+    {:reply, merge_state, merge_state}
   end
 
-  # keyの存在証明はvalidateによって成されていることが前提
-  def check_and_update_state([], state, _), do: {:ok, state}
-  def check_and_update_state([head | tail], state, request) do
-    state_src = Map.get(state, head)
-    src = Map.get(request, head)
-    if state_src - src >= 0 do
-      check_and_update_state(tail, Map.put(state, head, state_src - src), request)
+  defp is_unsafe([], reply), do: {:ok, reply}
+  defp is_unsafe([head | tail], reply) do
+    if Map.get(reply, head) >= 0 do
+      is_unsafe(tail, reply)
     else
-      {:unsafe, Map.put(state, head, state_src - src)}
+      {:unsafe, reply}
     end
   end
 end
